@@ -1,0 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "@xyflow/react/dist/style.css";
+@import "tailwindcss";
+
+/* -------------------- Thmanyah Sans -------------------- */
+@font-face {
+  font-family: 'ThmanyahSans';
+  src: url('/fonts/thmanyahsans-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ThmanyahSans';
+  src: url('/fonts/thmanyahsans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ThmanyahSans';
+  src: url('/fonts/thmanyahsans-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ThmanyahSans';
+  src: url('/fonts/thmanyahsans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ThmanyahSans';
+  src: url('/fonts/thmanyahsans-Black.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* -------------------- Thmanyah Serif Display -------------------- */
+@font-face {
+  font-family: 'ThmanyahSerifDisplay';
+  src: url('/fonts/thmanyahserifdisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ThmanyahSerifDisplay';
+  src: url('/fonts/thmanyahserifdisplay-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  /* المتغير الأساسي للخط، سيطبق على كامل المشروع */
+  --font-sans: "ThmanyahSans", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-serif: "ThmanyahSerifDisplay", serif;
+
+  
+  /* Quiclick Minimalist Palette */
+  --color-bg-base: #FFFFFF;
+  --color-bg-surface: #EBEBEB;
+  --color-text-main: #000000;
+  --color-text-dim: #555555;
+  --color-accent-primary: #000000;
+  --color-border-subtle: rgba(0, 0, 0, 0.05);
+}
+
+@layer base {
+  .dark {
+    --color-bg-base: #000000;
+    --color-bg-surface: #111111;
+    --color-text-main: #FFFFFF;
+    --color-text-dim: #AAAAAA;
+    --color-accent-primary: #FFFFFF;
+    --color-border-subtle: rgba(255, 255, 255, 0.1);
+  }
+
+  /* إجبار النظام بالكامل على استخدام الخط */
+  * {
+    font-family: var(--font-sans);
+  }
+
+  body {
+    @apply bg-bg-base text-text-main antialiased overflow-hidden select-none;
+    direction: rtl;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  
+  h1, h2, h3, .display-text {
+    @apply font-bold tracking-tight text-text-main;
+  }
+  
+  button, input, select, .ui-text, p, span {
+    @apply font-sans;
+  }
+}
+
+.react-flow__panel.react-flow__attribution {
+  display: none !important;
+}
+
+/* سكرول بار أنيق ومخفي جزئياً (macOS Style) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-dim);
+}
+
+/* ظلال ناعمة (Soft Glow/Shadows) */
+.soft-glow {
+  box-shadow: 0 0 40px -10px rgba(0, 0, 0, 0.1);
+}
+.soft-shadow {
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--color-border-subtle);
+}
+
+/* ────────── Mobile Responsive ────────── */
+@media (max-width: 768px) {
+  /* Make floating dock horizontally scrollable on mobile */
+  .mobile-dock {
+    max-width: calc(100vw - 2rem);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mobile-dock::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Larger touch targets on mobile */
+  .mobile-dock button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
