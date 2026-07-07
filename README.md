@@ -2,7 +2,7 @@
   <img src="public/logo.svg" width="120" alt="T9orat Logo" />
   <h1>T9orat (تطوّرات)</h1>
   <p><strong>تطبيق ذكي لبناء الخرائط الذهنية وتوليد الأفكار باستخدام الذكاء الاصطناعي</strong></p>
-  <a href="https://a873c723.t9orat-site.pages.dev">رابط النسخة المباشرة (Live Demo)</a>
+  <a href="https://t9orat.lol">رابط النسخة المباشرة (Live Demo)</a>
 </div>
 
 <br />
