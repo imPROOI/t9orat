@@ -1,20 +1,53 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <img src="public/logo.svg" width="120" alt="T9orat Logo" />
+  <h1>T9orat (تطوّرات)</h1>
+  <p><strong>تطبيق ذكي لبناء الخرائط الذهنية وتوليد الأفكار باستخدام الذكاء الاصطناعي</strong></p>
+  <a href="https://a873c723.t9orat-site.pages.dev">رابط النسخة المباشرة (Live Demo)</a>
 </div>
 
-# Run and deploy your AI Studio app
+<br />
 
-This contains everything you need to run your app locally.
+## 🌟 عن المشروع (About The Project)
 
-View your app in AI Studio: https://ai.studio/apps/c488604b-f696-4ece-9701-4bf798a78290
+**T9orat (تطوّرات)** هو تطبيق ويب تفاعلي يهدف إلى مساعدة المستخدمين على تنظيم أفكارهم واستكشاف مواضيع جديدة باستخدام الذكاء الاصطناعي (Gemini / OpenAI / Groq). 
+بمجرد إدخال فكرة أو موضوع، يقوم الذكاء الاصطناعي بتوليد خريطة ذهنية متكاملة تتضمن:
+- الفكرة الأساسية
+- أفكار فرعية وتفريعات
+- توصيات للبحث والتوسع
+- مصادر مقترحة للتعلم
 
-## Run Locally
+## ✨ المميزات الرئيسية (Key Features)
 
-**Prerequisites:**  Node.js
+- 🧠 **توليد خرائط ذهنية ذكية:** بناء شجرة أفكار لا نهائية بمجرد كتابة كلمة مفتاحية.
+- 📝 **ملخص ذكي (AI Summary):** تحويل الخريطة الذهنية المعقدة إلى مقال سردي متماسك باللغة العربية بضغطة زر.
+- ⭐ **تمييز الأفكار (Bookmarking):** إمكانية تمييز العقد المهمة بنجمة لتسهيل الوصول إليها وتذكرها.
+- 📁 **إدارة الجلسات (Sessions):** حفظ الخرائط الذهنية محلياً والعودة إليها لاحقاً (دعم حفظ وإدارة عدة جلسات).
+- 📱 **متجاوب بالكامل (Responsive):** تصميم حديث وزجاجي (Glassmorphism) يدعم جميع الشاشات والأجهزة المحمولة مع إيماءات لمس محسنة.
+- 🔍 **لوحة جانبية تفصيلية (Side Panel):** استعراض تفاصيل أي عقدة، سياق الفكرة، وروابط بحث مباشرة (Google, YouTube, Wikipedia, Scholar).
+- 🌙 **وضع ليلي/نهاري (Dark/Light Mode):** مريح للعين مع ألوان جذابة وحركات انتقالية سلسة.
+- 💾 **تصدير البيانات:** إمكانية حفظ الخريطة الذهنية كصورة (PNG) أو تصديرها كملف نصي (Markdown).
 
+## 🚀 التقنيات المستخدمة (Tech Stack)
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- **React 18** + **Vite**
+- **Tailwind CSS** (للتصميم المخصص والواجهة الزجاجية)
+- **Framer Motion** (للحركات والانتقالات السلسة)
+- **React Flow** (لرسم الخرائط الذهنية والعقد)
+- **Google Generative AI SDK** (لدمج نماذج Gemini)
+- **Lucide React** (للأيقونات)
+- **Cloudflare Pages** (للنشر السريع والمجاني)
+
+## 💻 التشغيل محلياً (Run Locally)
+
+1. **تثبيت الحزم:**
+   ```bash
+   npm install
+   ```
+2. **تشغيل بيئة التطوير:**
+   ```bash
+   npm run dev
+   ```
+   سيعمل التطبيق على `http://localhost:3000/`. عند فتح التطبيق لأول مرة، سيُطلب منك إدخال مفتاح API الخاص بك (Gemini أو OpenAI) من خلال واجهة الإعدادات.
+
+## 🤝 مساهمة
+تم بناء هذا المشروع ليكون أداة مساعدة للعصف الذهني والبحث الذكي. نرحب بأي اقتراحات أو تحسينات (Pull Requests)!
