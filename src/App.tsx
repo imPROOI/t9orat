@@ -1,577 +1,282 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { Node, Edge } from '@xyflow/react';
-import { SearchBar } from './components/SearchBar';
-import { GraphCanvas } from './components/GraphCanvas';
-import { SidePanel } from './components/SidePanel';
-import { ConfigScreen } from './components/ConfigScreen';
-import { IntroScreen } from './components/IntroScreen';
-import { generateGraphData, expandNode, generateSummary } from './lib/ai';
-import { applyForceLayout, applyIncrementalLayout } from './lib/layoutAlgorithm';
-import { NodeType, AppConfig } from './types';
-import { toPng } from 'html-to-image';
-import { Download, Trash2, AlertCircle, Sparkles, Settings, Undo2, Redo2, Moon, Sun, FolderOpen, FileText, BookOpen } from 'lucide-react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { Node, Edge, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toPng } from 'html-to-image';
+import { AlertCircle, UploadCloud } from 'lucide-react';
+
+import { NodeType, AppConfig, SearchQuery } from './types';
+import { generateGraphData, expandNode, generateSummary, askAIAboutNode } from './lib/ai';
+import { applyForceLayout, applyIncrementalLayout } from './lib/layoutAlgorithm';
+import { exportToMarkdown } from './lib/exportMarkdown';
+import { validateAndParseMindMapJSON, exportMindMapToJSON } from './lib/jsonExport';
+import { loadEncryptedConfig, saveEncryptedConfig } from './lib/crypto';
 import { useGraphState } from './hooks/useGraphState';
 import { useSessions } from './hooks/useSessions';
-import { exportToMarkdown } from './lib/exportMarkdown';
-import { SessionsScreen } from './components/SessionsScreen';
-import { SummaryModal } from './components/SummaryModal';
 
-// حركة ارتداد سلسة وفخمة (Smooth Spring Physics)
-const premiumSpring = { type: "spring", stiffness: 350, damping: 25 };
+import {
+  TopBar, FloatingDock, CanvasControls, InMapSearch,
+  MapStatsModal, KeyboardShortcutsModal, ShareModal, SearchBar,
+  GraphCanvas, SidePanel, ConfigScreen, IntroScreen, SessionsScreen, SummaryModal
+} from './components';
 
-export default function App() {
-  const [hasSeenIntro, setHasSeenIntro] = useState(() => {
-    return sessionStorage.getItem('introSeen') === 'true';
-  });
+const spring = { type: 'spring', stiffness: 350, damping: 25 };
 
-  const [config, setConfig] = useState<AppConfig | null>(() => {
-    try {
-      const saved = localStorage.getItem('symphony_config');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (!parsed.provider) parsed.provider = 'gemini';
-        return parsed;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  });
+function AppContent() {
+  const [hasSeenIntro, setHasSeenIntro] = useState(() => sessionStorage.getItem('introSeen') === 'true');
+  const [config, setConfig] = useState<AppConfig | null>(() => loadEncryptedConfig());
 
   const {
-    nodes,
-    edges,
-    hasHistory,
-    canUndo,
-    canRedo,
-    setGraphData,
-    deleteNode: deleteGraphNode,
-    clearAll: clearGraphAll,
-    undo,
-    redo,
-    toggleStar
+    nodes, edges, hasHistory, canUndo, canRedo,
+    setGraphData, loadGraphData, deleteNode, clearAll, undo, redo, toggleStar, updateNodeData
   } = useGraphState();
+  const { sessions, saveCurrentSession, deleteSession } = useSessions();
+  const { fitView } = useReactFlow();
 
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(hasHistory);
-  
-  useEffect(() => {
-    if (hasHistory) {
-      setHasSearched(true);
-    }
-  }, [hasHistory]);
-  const [suggestedTopics, setSuggestedTopics] = useState<{title: string, description: string}[]>([]);
-  const [contrarianTopics, setContrarianTopics] = useState<{title: string, description: string}[]>([]);
+  const [sessionName, setSessionName] = useState('جلسة فكرية جديدة');
+  const [suggestedTopics, setSuggestedTopics] = useState<{ title: string; description: string }[]>([]);
+  const [contrarianTopics, setContrarianTopics] = useState<{ title: string; description: string }[]>([]);
   const [panelData, setPanelData] = useState<{
-    type: 'node' | 'edge';
-    nodeId?: string;
-    title?: string;
-    description: string;
-    nodeType?: NodeType;
-    ideaContext?: string;
-    recommendationType?: string;
-    starred?: boolean;
+    type: 'node' | 'edge'; nodeId?: string; title?: string; description: string;
+    nodeType?: NodeType; ideaContext?: string; recommendationType?: string; starred?: boolean;
+    notes?: string; color?: string;
     searchQueries?: { label: string; query: string; site: 'google' | 'scholar' | 'youtube' | 'wikipedia' }[];
   } | null>(null);
 
   const [showConfig, setShowConfig] = useState(!config);
   const [showSessions, setShowSessions] = useState(false);
-  const { sessions, saveCurrentSession, deleteSession } = useSessions();
-  const [toast, setToast] = useState<{ message: string; type: 'error' | 'info' } | null>(null);
   const [showSummary, setShowSummary] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [summaryText, setSummaryText] = useState('');
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
-
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    return localStorage.getItem('t9orat_theme') === 'dark';
-  });
+  const [toast, setToast] = useState<{ message: string; type: 'error' | 'info' } | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('t9orat_theme') !== 'light');
+  const [isDragging, setIsDragging] = useState(false);
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const closeModals = () => { setPanelData(null); setShowSearch(false); setShowStats(false); setShowShortcuts(false); setShowShare(false); setShowSummary(false); setShowSessions(false); };
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('t9orat_theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('t9orat_theme', 'light');
-    }
+    document.documentElement.classList.toggle('dark', isDarkMode);
+    localStorage.setItem('t9orat_theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
-  const reactFlowWrapper = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (config) {
-      localStorage.setItem('symphony_config', JSON.stringify(config));
-    }
-  }, [config]);
-
+  useEffect(() => { if (config) localStorage.setItem('symphony_config', JSON.stringify(config)); }, [config]);
   useEffect(() => {
     if (toast) {
-      const timer = setTimeout(() => setToast(null), 3500);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => setToast(null), 3500);
+      return () => clearTimeout(t);
     }
   }, [toast]);
 
-  const handleSearch = async (keywords: string[], isNewSearch: boolean = false) => {
-    if (!config) return;
-    setIsLoading(true);
-    setPanelData(null);
-    setHasSearched(true);
-    
-    try {
-      const existingContext = isNewSearch ? [] : nodes.map(n => ({ id: n.id, label: (n.data.label as string) || '' }));
-      const graphData = await generateGraphData(keywords, config, existingContext);
+  const handleFitView = useCallback(() => fitView({ padding: 0.2, duration: 400 }), [fitView]);
 
+  const handleSearch = async (keywords: string[], isNewSearch = false) => {
+    if (!config) return;
+    setIsLoading(true); setPanelData(null); setHasSearched(true);
+    if (keywords.length > 0) setSessionName(keywords.join(' • '));
+    try {
+      const ctx = isNewSearch ? [] : nodes.map(n => ({ id: n.id, label: (n.data.label as string) || '' }));
+      const graphData = await generateGraphData(keywords, config, ctx);
       if (graphData.suggestedTopics) setSuggestedTopics(graphData.suggestedTopics);
       if (graphData.contrarianTopics) setContrarianTopics(graphData.contrarianTopics);
-
-      if (nodes.length === 0 || isNewSearch) {
-        const { nodes: placedNodes, edges: placedEdges } = applyForceLayout(graphData);
-        setGraphData(placedNodes, placedEdges);
-      } else {
-        const { nodes: placedNodes, edges: placedEdges } = applyIncrementalLayout(nodes, edges, graphData);
-        setGraphData(placedNodes, placedEdges);
-      }
-    } catch (error) {
-      console.error("Failed to generate graph:", error);
-      let errorMessage = "عذراً، حدث خطأ أثناء التوليد. الرجاء المحاولة مرة أخرى.";
-      if (error instanceof Error) {
-        if (error.message.includes('402') || error.message.toLowerCase().includes('insufficient balance')) {
-          errorMessage = "الرصيد غير كافٍ. يرجى الشحن أو تغيير المفتاح.";
-        } else if (error.message.includes('401') || error.message.toLowerCase().includes('invalid api key')) {
-          errorMessage = "مفتاح الـ API غير صالح.";
-        }
-      }
-      setToast({ message: errorMessage, type: 'error' });
+      const layout = (nodes.length === 0 || isNewSearch) ? await applyForceLayout(graphData) : await applyIncrementalLayout(nodes, edges, graphData);
+      setGraphData(layout.nodes, layout.edges);
+      setTimeout(() => handleFitView(), 200);
+    } catch (err: unknown) {
+      const msg = err instanceof Error && err.message.includes('402') ? 'الرصيد غير كافٍ' : 'حدث خطأ أثناء التوليد';
+      setToast({ message: msg, type: 'error' });
       if (nodes.length === 0) setHasSearched(false);
-    } finally {
-      setIsLoading(false);
-    }
+    } finally { setIsLoading(false); }
   };
-
-  const handleNodeClick = useCallback((node: Node) => {
-    setPanelData({
-      type: 'node',
-      nodeId: node.id,
-      title: node.data.label as string,
-      description: node.data.description as string,
-      nodeType: node.data.type as NodeType,
-      ideaContext: node.data.ideaContext as string,
-      recommendationType: node.data.recommendationType as string,
-      starred: node.data.starred as boolean,
-      searchQueries: node.data.searchQueries as any,
-    });
-  }, []);
-
-  const handleEdgeClick = useCallback((edge: Edge) => {
-    setPanelData({
-      type: 'edge',
-      description: edge.data?.explanation as string || 'لا يوجد شرح لهذا الرابط.',
-    });
-  }, []);
-
-  const handleDeleteNode = useCallback((nodeId: string) => {
-    deleteGraphNode(nodeId);
-    setPanelData(null);
-  }, [deleteGraphNode]);
-
-  const handleClearAll = useCallback(() => {
-    clearGraphAll();
-    setHasSearched(false);
-    setPanelData(null);
-    setToast({ message: 'تم مسح اللوحة بنجاح', type: 'info' });
-  }, [clearGraphAll]);
 
   const handleExpandNode = useCallback(async (nodeId: string, nodeLabel: string) => {
     if (!config) return;
-    setIsLoading(true);
-    setPanelData(null);
-    
+    setIsLoading(true); setPanelData(null);
     try {
-      const existingContext = nodes.map(n => ({ id: n.id, label: (n.data.label as string) || '' }));
-      const newGraphData = await expandNode(nodeId, nodeLabel, config, existingContext);
-      
-      const { nodes: placedNodes, edges: placedEdges } = applyIncrementalLayout(nodes, edges, newGraphData);
-      setGraphData(placedNodes, placedEdges);
+      const ctx = nodes.map(n => ({ id: n.id, label: (n.data.label as string) || '' }));
+      const newGraph = await expandNode(nodeId, nodeLabel, config, ctx);
+      const layout = await applyIncrementalLayout(nodes, edges, newGraph);
+      setGraphData(layout.nodes, layout.edges);
       setToast({ message: 'تم توسيع الفكرة بنجاح', type: 'info' });
-    } catch (error) {
-      console.error("Failed to expand node:", error);
-      let errorMessage = "عذراً، حدث خطأ أثناء توسيع الفكرة. الرجاء المحاولة مرة أخرى.";
-      if (error instanceof Error) {
-        if (error.message.includes('402') || error.message.toLowerCase().includes('insufficient balance')) {
-          errorMessage = "الرصيد غير كافٍ. يرجى الشحن أو تغيير المفتاح.";
-        } else if (error.message.includes('401') || error.message.toLowerCase().includes('invalid api key')) {
-          errorMessage = "مفتاح الـ API غير صالح.";
-        }
-      }
-      setToast({ message: errorMessage, type: 'error' });
-    } finally {
-      setIsLoading(false);
-    }
+    } catch { setToast({ message: 'عذراً، حدث خطأ أثناء توسيع الفكرة', type: 'error' }); }
+    finally { setIsLoading(false); }
   }, [config, nodes, edges, setGraphData]);
 
-  const handleExport = useCallback(() => {
-    if (reactFlowWrapper.current === null) return;
-
-    // خلفية شفافة أو نفس لون الدارك مود أثناء التصدير
-    toPng(reactFlowWrapper.current, { backgroundColor: '#0A0A0C' })
-      .then((dataUrl) => {
-        const link = document.createElement('a');
-        link.download = 'symphony-graph.png';
-        link.href = dataUrl;
-        link.click();
-        setToast({ message: 'تم حفظ الصورة', type: 'info' });
-      })
-      .catch((err) => {
-        console.error('Failed to export graph', err);
-        setToast({ message: 'فشل الحفظ', type: 'error' });
-      });
-  }, []);
-
-  const handleExportMarkdown = useCallback(() => {
-    exportToMarkdown(nodes, edges);
-    setToast({ message: 'تم تصدير الخريطة كملف Markdown', type: 'info' });
-  }, [nodes, edges]);
-
-  const handleGenerateSummary = useCallback(async () => {
-    if (!config || nodes.length === 0) return;
-    setShowSummary(true);
-    setIsSummaryLoading(true);
-    setSummaryText('');
+  const handleRegenerateBranches = useCallback(async (nodeId: string, nodeLabel: string) => {
+    if (!config) return;
+    setIsLoading(true); setPanelData(null);
     try {
-      const nodesData = nodes.map(n => ({
-        id: n.id,
-        label: (n.data.label as string) || '',
-        description: (n.data.description as string) || '',
-        type: (n.data.type as string) || 'idea',
-      }));
-      const edgesData = edges.map(e => ({
-        source: e.source,
-        target: e.target,
-        explanation: (e.data?.explanation as string) || '',
-      }));
-      const result = await generateSummary(nodesData, edgesData, config);
-      setSummaryText(result);
-    } catch (error) {
-      console.error('Failed to generate summary:', error);
-      setToast({ message: 'فشل توليد الملخص', type: 'error' });
-      setShowSummary(false);
-    } finally {
-      setIsSummaryLoading(false);
+      const outgoingTargets = edges.filter(e => e.source === nodeId).map(e => e.target);
+      const remainingEdges = edges.filter(e => e.source !== nodeId);
+      const remainingNodes = nodes.filter(n => !outgoingTargets.includes(n.id) || n.data?.type === 'input');
+      const ctx = remainingNodes.map(n => ({ id: n.id, label: (n.data?.label as string) || '' }));
+      const newGraph = await expandNode(nodeId, nodeLabel, config, ctx);
+      const layout = await applyIncrementalLayout(remainingNodes, remainingEdges, newGraph);
+      setGraphData(layout.nodes, layout.edges);
+      setToast({ message: 'تمت إعادة توليد الفروع بنجاح', type: 'info' });
+    } catch { setToast({ message: 'عذراً، حدث خطأ أثناء إعادة توليد الفروع', type: 'error' }); }
+    finally { setIsLoading(false); }
+  }, [config, nodes, edges, setGraphData]);
+
+  const handleImportJsonFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = validateAndParseMindMapJSON(text);
+      loadGraphData(parsed.nodes, parsed.edges);
+      setHasSearched(true);
+      if (parsed.title) setSessionName(parsed.title);
+      setToast({ message: `تم استيراد ${parsed.nodes.length} عقدة بنجاح`, type: 'info' });
+      setTimeout(() => handleFitView(), 250);
+    } catch (e: unknown) {
+      setToast({ message: e instanceof Error ? e.message : 'فشل قراءة الملف', type: 'error' });
     }
+  };
+
+  const handleExportPng = useCallback(() => {
+    if (!reactFlowWrapper.current) return;
+    toPng(reactFlowWrapper.current, { backgroundColor: '#0A0A0C' })
+      .then((url) => {
+        const a = document.createElement('a'); a.download = `${sessionName}.png`; a.href = url; a.click();
+        setToast({ message: 'تم حفظ الصورة بنجاح', type: 'info' });
+      })
+      .catch(() => setToast({ message: 'فشل حفظ الصورة', type: 'error' }));
+  }, [sessionName]);
+
+  const handleSummary = useCallback(async () => {
+    if (!config || nodes.length === 0) return;
+    setShowSummary(true); setIsSummaryLoading(true); setSummaryText('');
+    try {
+      const nds = nodes.map(n => ({ id: n.id, label: (n.data.label as string) || '', description: (n.data.description as string) || '', type: (n.data.type as string) || 'idea' }));
+      const eds = edges.map(e => ({ source: e.source, target: e.target, explanation: (e.data?.explanation as string) || '' }));
+      setSummaryText(await generateSummary(nds, eds, config));
+    } catch { setToast({ message: 'فشل توليد الملخص', type: 'error' }); setShowSummary(false); }
+    finally { setIsSummaryLoading(false); }
   }, [config, nodes, edges]);
 
-  const handleToggleStar = useCallback((nodeId: string) => {
-    toggleStar(nodeId);
-    setPanelData(prev => prev && prev.nodeId === nodeId ? { ...prev, starred: !prev.starred } : prev);
-  }, [toggleStar]);
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName) || (e.target as HTMLElement)?.isContentEditable;
+      if (isInput) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); setShowSearch(true); }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z')) { e.preventDefault(); redo(); }
+      else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (panelData?.nodeId) { deleteNode(panelData.nodeId); setPanelData(null); setToast({ message: 'تم حذف العقدة', type: 'info' }); }
+      } else if (e.key === 'Escape') {
+        closeModals();
+      } else if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); setShowShortcuts(true); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [panelData, undo, redo, deleteNode]);
+
+  const selectNodeInPanel = (n: Node) => setPanelData({
+    type: 'node', nodeId: n.id, title: n.data.label as string, description: n.data.description as string,
+    nodeType: n.data.type as NodeType, ideaContext: n.data.ideaContext as string,
+    recommendationType: n.data.recommendationType as string, starred: n.data.starred as boolean,
+    notes: n.data.userNotes as string, color: n.data.customColor as string,
+    searchQueries: n.data.searchQueries as SearchQuery[] | undefined
+  });
 
   return (
-    <div className="fixed inset-0 bg-bg-base text-text-main font-sans selection:bg-accent-primary/30 overflow-hidden flex flex-col">
-      
-      {/* خلفية بتأثير إضاءة خافت وناعم */}
-      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-accent-primary/10 rounded-full blur-[120px]"></div>
-      </div>
-
+    <div className="fixed inset-0 bg-bg-base text-text-main font-sans overflow-hidden flex flex-col select-none">
       <AnimatePresence mode="wait">
-        {/* شاشة البداية */}
         {!hasSeenIntro && (
-          <motion.div
-            key="intro"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={premiumSpring}
-            className="absolute inset-0 z-[100]"
-          >
-            <IntroScreen onStart={() => {
-              sessionStorage.setItem('introSeen', 'true');
-              setHasSeenIntro(true);
-            }} />
+          <motion.div key="intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[100]">
+            <IntroScreen onStart={() => { sessionStorage.setItem('introSeen', 'true'); setHasSeenIntro(true); }} />
           </motion.div>
         )}
-
-        {/* شاشة الإعدادات */}
         {hasSeenIntro && (showConfig || !config) && (
-          <motion.div
-            key="config"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={premiumSpring}
-            className="absolute inset-0 z-[90] flex items-center justify-center bg-bg-base/80 backdrop-blur-md p-4 overflow-y-auto"
-          >
-            <ConfigScreen 
-              savedConfig={config} 
-              onCancel={config ? () => setShowConfig(false) : undefined}
-              onSaved={(newConfig) => {
-                setConfig(newConfig);
-                setShowConfig(false);
-              }} 
-            />
+          <motion.div key="cfg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[90] flex items-center justify-center bg-bg-base/80 backdrop-blur-md p-4">
+            <ConfigScreen savedConfig={config} onCancel={config ? () => setShowConfig(false) : undefined} onSaved={(c) => { saveEncryptedConfig(c); setConfig(c); setShowConfig(false); }} />
           </motion.div>
         )}
-
-        {/* شاشة الجلسات */}
         {hasSeenIntro && showSessions && (
-          <motion.div
-            key="sessions"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={premiumSpring}
-            className="absolute inset-0 z-[90] flex items-center justify-center bg-bg-base/80 backdrop-blur-md p-4 overflow-y-auto"
-          >
-            <SessionsScreen
-              sessions={sessions}
-              currentNodes={nodes}
-              currentEdges={edges}
-              onSaveCurrent={(name, n, e) => {
-                saveCurrentSession(name, n, e);
-                setToast({ message: 'تم حفظ الجلسة بنجاح', type: 'info' });
-              }}
-              onLoadSession={(session) => {
-                setGraphData(session.nodes, session.edges);
-                setShowSessions(false);
-                setToast({ message: 'تم تحميل الجلسة بنجاح', type: 'info' });
-              }}
-              onDeleteSession={(id) => {
-                deleteSession(id);
-                setToast({ message: 'تم حذف الجلسة', type: 'info' });
-              }}
-              onClose={() => setShowSessions(false)}
-            />
+          <motion.div key="ses" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[90] flex items-center justify-center bg-bg-base/80 backdrop-blur-md p-4">
+            <SessionsScreen sessions={sessions} currentNodes={nodes} currentEdges={edges} onSaveCurrent={saveCurrentSession} onLoadSession={(s) => { loadGraphData(s.nodes, s.edges); setSessionName(s.name); setShowSessions(false); }} onDeleteSession={deleteSession} onClose={() => setShowSessions(false)} />
           </motion.div>
         )}
+      </AnimatePresence>
 
-        {/* واجهة التطبيق الرئيسية */}
-        {hasSeenIntro && config && !showConfig && (
-          <motion.div
-            key="main"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="relative z-10 w-full h-full flex flex-col"
+      {hasSeenIntro && config && (
+        <div className="relative z-10 w-full h-full flex flex-col">
+          <TopBar sessionName={sessionName} nodesCount={nodes.length} isDarkMode={isDarkMode} onOpenStats={() => setShowStats(true)} onOpenShortcuts={() => setShowShortcuts(true)} onOpenShare={() => setShowShare(true)} onOpenSettings={() => setShowConfig(true)} onToggleTheme={() => setIsDarkMode(!isDarkMode)} />
+          <div className="relative z-20 shrink-0 p-3 md:p-6 pb-0">
+            <SearchBar onSearch={handleSearch} isLoading={isLoading} hasSearched={hasSearched} suggestedTopics={suggestedTopics} contrarianTopics={contrarianTopics} onOpenConfig={() => setShowConfig(true)} />
+          </div>
+          <div
+            className="flex-1 relative w-full overflow-hidden"
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files?.[0]) handleImportJsonFile(e.dataTransfer.files[0]); }}
           >
-            {/* شريط البحث */}
-            <div className="relative z-50 shrink-0 p-3 md:p-6 pb-0">
-              <SearchBar 
-                onSearch={handleSearch} 
-                isLoading={isLoading} 
-                hasSearched={hasSearched}
-                suggestedTopics={suggestedTopics}
-                contrarianTopics={contrarianTopics}
-                onOpenConfig={() => setShowConfig(true)}
-              />
-            </div>
-
-            {/* مساحة الرسم (اللوحة) */}
-            <div className="flex-1 relative w-full overflow-hidden">
-              {hasSearched && (
-                <div className="absolute inset-0 z-10" ref={reactFlowWrapper}>
-                  <GraphCanvas 
-                    nodes={nodes} 
-                    edges={edges} 
-                    onNodeClick={handleNodeClick}
-                    onEdgeClick={handleEdgeClick}
-                  />
-                </div>
+            {hasSearched && (
+              <div className="absolute inset-0 z-10" ref={reactFlowWrapper}>
+                <GraphCanvas nodes={nodes} edges={edges} onNodeClick={selectNodeInPanel} onEdgeClick={(e) => setPanelData({ type: 'edge', description: (e.data?.explanation as string) || 'لا يوجد شرح لهذا الرابط.' })} />
+                <CanvasControls className="absolute bottom-20 md:bottom-8 right-4 md:right-6" onFitView={handleFitView} />
+                <FloatingDock canUndo={canUndo} canRedo={canRedo} hasNodes={nodes.length > 0} onUndo={undo} onRedo={redo} onFitView={handleFitView} onOpenSearch={() => setShowSearch(true)} onOpenSessions={() => setShowSessions(true)} onExportPng={handleExportPng} onExportMarkdown={() => exportToMarkdown(nodes, edges)} onExportJson={() => exportMindMapToJSON(nodes, edges, sessionName)} onImportJson={handleImportJsonFile} onOpenSummary={handleSummary} onOpenStats={() => setShowStats(true)} onClearAll={() => { clearAll(); setHasSearched(false); setPanelData(null); }} />
+              </div>
+            )}
+            <AnimatePresence>
+              {isDragging && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-50 flex items-center justify-center bg-bg-base/80 backdrop-blur-md border-2 border-dashed border-accent-primary m-4 rounded-3xl" dir="rtl">
+                  <div className="flex flex-col items-center gap-3 text-accent-primary"><UploadCloud className="w-12 h-12 animate-bounce" /><p className="font-bold text-lg">أفلت ملف الخريطة الذهنية (JSON) للاستيراد الفوري</p></div>
+                </motion.div>
               )}
+            </AnimatePresence>
+          </div>
+        </div>
+      )}
 
-              {/* شريط التحكم السفلي الزجاجي (Floating Dock) */}
-              <AnimatePresence>
-                {hasSearched && !isLoading && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 40, x: '-50%' }}
-                    animate={{ opacity: 1, y: 0, x: '-50%' }}
-                    exit={{ opacity: 0, y: 40, x: '-50%' }}
-                    transition={premiumSpring}
-                    className="absolute bottom-4 md:bottom-8 left-1/2 z-40 flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 bg-bg-glass backdrop-blur-xl border border-border-subtle rounded-full soft-shadow mobile-dock"
-                  >
-                    {!panelData && nodes.length > 0 && (
-                      <div className="hidden md:flex items-center gap-2 pl-4 border-l border-border-subtle text-text-dim text-sm font-medium">
-                        <Sparkles className="w-4 h-4 text-accent-primary" />
-                        <span>انقر على الأشكال للاستكشاف</span>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-1 md:gap-2">
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={undo}
-                        disabled={!canUndo}
-                        className={`flex items-center justify-center w-10 h-10 rounded-full transition-colors ${canUndo ? 'text-text-dim hover:text-text-main' : 'text-text-dim/30 cursor-not-allowed'}`}
-                        title="تراجع"
-                      >
-                        <Undo2 className="w-5 h-5" />
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={redo}
-                        disabled={!canRedo}
-                        className={`flex items-center justify-center w-10 h-10 rounded-full transition-colors ${canRedo ? 'text-text-dim hover:text-text-main' : 'text-text-dim/30 cursor-not-allowed'}`}
-                        title="إعادة"
-                      >
-                        <Redo2 className="w-5 h-5" />
-                      </motion.button>
-                      <div className="w-px h-6 bg-border-subtle mx-1"></div>
-
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setShowSessions(true)}
-                        className="flex items-center justify-center text-text-dim hover:text-text-main w-10 h-10 rounded-full transition-colors"
-                        title="الجلسات المحفوظة"
-                      >
-                        <FolderOpen className="w-5 h-5" />
-                      </motion.button>
-
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleExport}
-                        className="flex items-center justify-center text-text-dim hover:text-text-main w-10 h-10 rounded-full transition-colors"
-                        title="حفظ الصورة"
-                      >
-                        <Download className="w-5 h-5" />
-                      </motion.button>
-
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleExportMarkdown}
-                        className="flex items-center justify-center text-text-dim hover:text-text-main w-10 h-10 rounded-full transition-colors"
-                        title="تصدير Markdown"
-                      >
-                        <FileText className="w-5 h-5" />
-                      </motion.button>
-
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleGenerateSummary}
-                        className="flex items-center justify-center text-text-dim hover:text-text-main w-10 h-10 rounded-full transition-colors"
-                        title="ملخص ذكي"
-                      >
-                        <BookOpen className="w-5 h-5" />
-                      </motion.button>
-
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(248,113,113,0.1)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleClearAll}
-                        className="flex items-center justify-center text-text-dim hover:text-accent-red w-10 h-10 rounded-full transition-colors"
-                        title="مسح الكل"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </motion.button>
-
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setShowConfig(true)}
-                        className="flex items-center justify-center text-text-dim hover:text-text-main w-10 h-10 rounded-full transition-colors"
-                        title="الإعدادات"
-                      >
-                        <Settings className="w-5 h-5" />
-                      </motion.button>
-                      
-                      <div className="w-px h-6 bg-border-subtle mx-1"></div>
-
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setIsDarkMode(!isDarkMode)}
-                        className="flex items-center justify-center text-text-dim hover:text-text-main w-10 h-10 rounded-full transition-colors"
-                        title="الوضع المظلم / الفاتح"
-                      >
-                        {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* شاشة التحميل */}
-              <AnimatePresence>
-                {isLoading && (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 z-[60] flex items-center justify-center bg-bg-base/50 backdrop-blur-md pointer-events-none"
-                    dir="rtl"
-                  >
-                    <div className="flex flex-col items-center gap-4 bg-bg-surface border border-border-subtle soft-shadow rounded-3xl p-8">
-                      <motion.div 
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                        className="w-10 h-10 border-2 border-border-subtle border-t-accent-primary rounded-full"
-                      />
-                      <p className="text-text-main text-sm font-medium tracking-wide">
-                        جاري التفكير وربط الأفكار...
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <SidePanel 
-        isOpen={!!panelData} 
-        onClose={() => setPanelData(null)} 
+      <SidePanel
+        isOpen={!!panelData}
+        onClose={() => setPanelData(null)}
         data={panelData}
-        onDeleteNode={handleDeleteNode}
+        onDeleteNode={(id) => { deleteNode(id); setPanelData(null); }}
         onExpandNode={handleExpandNode}
-        onToggleStar={handleToggleStar}
+        onRegenerateBranches={handleRegenerateBranches}
+        onToggleStar={toggleStar}
+        onUpdateNotes={(id, notes) => updateNodeData(id, { userNotes: notes })}
+        onUpdateColor={(id, color) => updateNodeData(id, { customColor: color })}
+        onAskAI={async (nodeId, question) => {
+          if (!config) throw new Error('يرجى ضبط مفتاح الـ API في الإعدادات أولاً');
+          const target = nodes.find(n => n.id === nodeId);
+          return await askAIAboutNode(
+            (target?.data?.label as string) || '',
+            (target?.data?.description as string) || '',
+            question,
+            config
+          );
+        }}
       />
-
-      {/* AI Summary Modal */}
-      <AnimatePresence>
-        {showSummary && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={premiumSpring}
-            className="fixed inset-0 z-[90] flex items-center justify-center bg-bg-base/80 backdrop-blur-md p-3 md:p-4 overflow-y-auto"
-          >
-            <SummaryModal
-              summary={summaryText}
-              isLoading={isSummaryLoading}
-              onClose={() => setShowSummary(false)}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* التنبيهات (Dynamic Island Style) */}
+      <InMapSearch isOpen={showSearch} nodes={nodes} onClose={() => setShowSearch(false)} onSelectNode={selectNodeInPanel} />
+      <MapStatsModal isOpen={showStats} onClose={() => setShowStats(false)} nodes={nodes} edges={edges} sessionName={sessionName} />
+      <KeyboardShortcutsModal isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      <ShareModal isOpen={showShare} onClose={() => setShowShare(false)} nodes={nodes} edges={edges} sessionName={sessionName} onNotify={(msg) => setToast({ message: msg, type: 'info' })} />
+      <AnimatePresence>{showSummary && <SummaryModal summary={summaryText} isLoading={isSummaryLoading} onClose={() => setShowSummary(false)} />}</AnimatePresence>
       <AnimatePresence>
         {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.9, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
-            exit={{ opacity: 0, y: 10, scale: 0.9, x: '-50%' }}
-            transition={premiumSpring}
-            className="absolute bottom-28 left-1/2 z-[200] w-max max-w-[90vw]"
-            dir="rtl"
-          >
-            <div className={`flex items-center gap-3 px-5 py-3 rounded-full border soft-shadow ${
-              toast.type === 'error' 
-                ? 'bg-red-500/10 border-red-500/20 text-red-200' 
-                : 'bg-bg-surface border-border-subtle text-text-main'
-            }`}>
-              {toast.type === 'error' && <AlertCircle className="w-5 h-5 shrink-0 text-red-400" />}
-              <p className="text-sm font-medium mt-0.5">{toast.message}</p>
+          <motion.div initial={{ opacity: 0, y: 20, scale: 0.9, x: '-50%' }} animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }} exit={{ opacity: 0, y: 10, scale: 0.9, x: '-50%' }} transition={spring} className="fixed bottom-24 md:bottom-28 left-1/2 z-[200] max-w-[90vw]" dir="rtl">
+            <div className={`flex items-center gap-3 px-5 py-3 rounded-full border soft-shadow ${toast.type === 'error' ? 'bg-red-500/15 border-red-500/30 text-red-200' : 'bg-bg-surface/95 border-border-subtle text-text-main backdrop-blur-xl'}`}>
+              {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-red-400" />}
+              <p className="text-sm font-medium">{toast.message}</p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <AppContent />
+    </ReactFlowProvider>
   );
 }

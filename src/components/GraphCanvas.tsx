@@ -26,9 +26,18 @@ interface GraphCanvasProps {
   edges: Edge[];
   onNodeClick: (node: Node) => void;
   onEdgeClick: (edge: Edge) => void;
+  onInit?: (instance: any) => void;
+  children?: React.ReactNode;
 }
 
-export function GraphCanvas({ nodes: initialNodes, edges: initialEdges, onNodeClick, onEdgeClick }: GraphCanvasProps) {
+export function GraphCanvas({ 
+  nodes: initialNodes, 
+  edges: initialEdges, 
+  onNodeClick, 
+  onEdgeClick,
+  onInit,
+  children
+}: GraphCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   
@@ -140,6 +149,7 @@ export function GraphCanvas({ nodes: initialNodes, edges: initialEdges, onNodeCl
         edgesFocusable={true}
         className="bg-transparent"
         proOptions={{ hideAttribution: true }}
+        onInit={onInit}
       >
         <Background 
           color="rgba(115, 118, 106, 0.15)"
@@ -147,6 +157,7 @@ export function GraphCanvas({ nodes: initialNodes, edges: initialEdges, onNodeCl
           gap={24}
           size={1.5}
         />
+        {children}
       </ReactFlow>
     </div>
   );

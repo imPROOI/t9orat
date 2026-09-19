@@ -1,0 +1,32 @@
+{
+  "name": "تصوّرات | Tasaowrat",
+  "short_name": "تصوّرات",
+  "description": "تصوّرات - محرك استكشاف بصري مدعوم بالذكاء الاصطناعي لتوليد الأفكار المبتكرة والخرائط الذهنية التفاعلية",
+  "dir": "rtl",
+  "lang": "ar",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0A0A0C",
+  "background_color": "#0A0A0C",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
